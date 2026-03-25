@@ -30,7 +30,7 @@ async def get_main_scraper():
                     k, v = item.strip().split('=', 1)
                     cookie_dict[k.strip()] = v.strip()
                     
-        GLOBAL_SCRAPER = AsyncSession(impersonate="chrome120", cookies=cookie_dict)
+        GLOBAL_SCRAPER = AsyncSession(impersonate="safari_ios", cookies=cookie_dict)
         GLOBAL_COOKIE_STR = raw_cookie
         GLOBAL_CSRF = {'mlbb_br': None, 'mlbb_ph': None, 'mcc_br': None, 'mcc_ph': None}
         
