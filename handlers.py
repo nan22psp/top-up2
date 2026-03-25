@@ -491,7 +491,8 @@ async def handle_topup(message: types.Message):
                 card_amount = 0.0
                 try:
                     if 'data' in check_res and isinstance(check_res['data'], dict):
-                        val = check_res['data'].get('amount', check_res['data'].get('money', 0))
+                        # Added fallback keys for PH API
+                        val = check_res['data'].get('amount', check_res['data'].get('money', check_res['data'].get('price', 0)))
                         if val: card_amount = float(val)
                 except: pass
 
@@ -502,10 +503,11 @@ async def handle_topup(message: types.Message):
                     pay_status = str(pay_res.get('code', pay_res.get('status', '')))
                     
                     if pay_status in ['200', '0', '1'] or 'success' in str(pay_res.get('msg', '')).lower():
-                        await asyncio.sleep(5) 
+                        await asyncio.sleep(8)  # Increased delay for PH Server synchronization
                         anti_cache_url = f"{balance_check_url}?_t={int(time.time())}"
                         new_bal = await easy_bby.get_smile_balance(scraper, headers, anti_cache_url)
                         bal_key = 'br_balance' if api_type == 'BR' else 'ph_balance'
+                        
                         added = round(new_bal[bal_key] - old_bal[bal_key], 2)
                         if added <= 0 and card_amount > 0: added = card_amount
                         return "success", added
@@ -536,7 +538,8 @@ async def handle_topup(message: types.Message):
         elif status == "success":
             added_amount = result
             if added_amount <= 0:
-                await loading_msg.edit_text(f"sᴍɪʟᴇ ᴏɴᴇ ʀᴇᴅᴇᴇᴍ ᴄᴏᴅᴇ sᴜᴄᴄᴇss ✅\n(Cannot retrieve exact amount due to System Delay.)")
+                await loading_msg.edit_text(f"sᴍɪʟᴇ ᴏɴᴇ ʀᴇᴅᴇᴇᴍ ᴄᴏᴅᴇ sᴜᴄᴄᴇss ✅\n(Website မှ Amount ကို ပြန်မပေးပို့ပါ၊ ထို့ကြောင့် V-Wallet သို့ အလိုအလျောက်မပေါင်းထည့်နိုင်ပါ။ Admin ကိုအကြောင်းကြားပါ။)")
+                await notify_owner(f"⚠️ <b>Code Success but V-Wallet not updated:</b>\nUser: {tg_id}\nCode: {activation_code}\nRegion: {active_region}\n<i>Main Account ထဲဝင်သွားသော်လည်း Amount ဖမ်းမမိပါ။</i>")
             else:
                 if user_id_int == OWNER_ID: 
                     fee_percent = 0.0
