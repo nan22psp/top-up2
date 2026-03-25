@@ -114,20 +114,23 @@ async def get_smile_balance(scraper, headers, balance_url='https://www.smile.one
     balances = {'br_balance': 0.00, 'ph_balance': 0.00}
     try:
         response = await scraper.get(balance_url, headers=headers, timeout=15)
+        text_data = response.text
         
-        br_match = re.search(r'(?i)(?:Balance|Saldo)[\s:]*?<\/p>\s*<p>\s*([\d\.,]+)', response.text)
+        # BR Balance
+        br_match = re.search(r'(?i)(?:Balance|Saldo)[\s:]*?<\/p>\s*<p>\s*([\d\.,]+)', text_data)
         if br_match: balances['br_balance'] = float(br_match.group(1).replace(',', ''))
         else:
-            soup = BeautifulSoup(response.text, 'html.parser')
+            soup = BeautifulSoup(text_data, 'html.parser')
             main_balance_div = soup.find('div', class_='balance-coins')
             if main_balance_div:
                 p_tags = main_balance_div.find_all('p')
                 if len(p_tags) >= 2: balances['br_balance'] = float(p_tags[1].text.strip().replace(',', ''))
                     
-        ph_match = re.search(r'(?i)Saldo PH[\s:]*?<\/span>\s*<span>\s*([\d\.,]+)', response.text)
+        # PH Balance (Fixed Regex)
+        ph_match = re.search(r'(?i)(?:Saldo PH|PH Balance)[\s:]*?<\/span>\s*<span>\s*([\d\.,]+)', text_data)
         if ph_match: balances['ph_balance'] = float(ph_match.group(1).replace(',', ''))
         else:
-            soup = BeautifulSoup(response.text, 'html.parser')
+            soup = BeautifulSoup(text_data, 'html.parser')
             ph_balance_container = soup.find('div', id='all-balance')
             if ph_balance_container:
                 span_tags = ph_balance_container.find_all('span')
