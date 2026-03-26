@@ -746,7 +746,89 @@ async def check_cookie_status(message: types.Message):
         else: await loading_msg.edit_text("🔴 Exᴘɪʀᴇᴅ", parse_mode=ParseMode.HTML)
     except Exception as e: await loading_msg.edit_text(f"❌ Error checking cookie: {str(e)}")
 
+
 @dp.message(or_f(Command("role"), F.text.regexp(r"(?i)^\.role(?:$|\s+)")))
+async def handle_check_role(message: types.Message):
+
+    if not await is_authorized(message.from_user.id): return await message.reply("ɴᴏᴛ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀ.")
+    match = re.search(r"(?i)^[./]?role\s+(\d+)\s*[\(]?\s*(\d+)\s*[\)]?", message.text.strip())
+    if not match: return await message.reply("❌ Invalid format. Use: `.role 12345678 1234`")
+    
+    game_id, zone_id = match.group(1).strip(), match.group(2).strip()
+    loading_msg = await message.reply("Checking account region...", parse_mode=ParseMode.HTML)
+
+    url = 'https://pizzoshop.com/mlchecker/check'
+    
+    payload = {
+        'user_id': game_id,
+        'zone_id': zone_id
+    }
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://pizzoshop.com',
+        'Referer': 'https://pizzoshop.com/mlchecker/check',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    }
+
+    try:
+        # ⚠️ အရေးကြီး: PizzoShop သို့ Request ပို့ရာတွင် GET ဖြင့် Cookie အရင်ယူမည်
+        async with AsyncSession(impersonate="safari_ios") as local_scraper:
+            await local_scraper.get(url, headers=headers, timeout=15)
+            res = await local_scraper.post(url, data=payload, headers=headers, timeout=15)
+        
+        # BeautifulSoup ဖြင့် HTML ဒေတာထုတ်ယူမည်
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # HTML ထဲမှ table-modern ကို ရှာဖွေခြင်း
+        table = soup.find('table', class_='table-modern')
+        
+        if not table:
+             # Cloudflare က ပိတ်ထားတာလား စစ်ဆေးရန်
+             if "just a moment" in res.text.lower() or "cloudflare" in res.text.lower():
+                 return await loading_msg.edit_text("❌ **Security Block:** PizzoShop ၏ Cloudflare လုံခြုံရေးမှ ယာယီပိတ်ထားပါသည်။", parse_mode=ParseMode.HTML)
+             
+             # ဘာမှားနေလဲ တိတိကျကျ သိရအောင် PizzoShop မှ ပြန်ပို့သော စာသားကို ပြပေးမည်
+             debug_msg = res.text[:120].replace('<', '&lt;').replace('>', '&gt;').strip()
+             return await loading_msg.edit_text(f"❌ **Not Found or Error:**\n<code>{debug_msg}...</code>", parse_mode=ParseMode.HTML)
+
+        ig_name = "Unknown"
+        region = "Unknown"
+        last_login = "Unknown"
+
+        # Table Row တစ်ခုချင်းစီကို ဖတ်ခြင်း
+        rows = table.find_all('tr')
+        for row in rows:
+            th = row.find('th')
+            td = row.find('td')
+            if th and td:
+                th_text = th.text.strip().lower()
+                if 'nickname' in th_text:
+                    ig_name = td.text.strip()
+                elif 'region id' in th_text:
+                    # ဤနေရာတွင် (the) နှင့် (The) ကို ဖျောက်ရန် replace ထည့်ပါ
+                    region = td.text.strip().replace(" (the)", "").replace(" (The)", "")
+                elif 'last login' in th_text:
+                    # ဤနေရာတွင် (the) နှင့် (The) ကို ဖျောက်ရန် replace ထည့်ပါ
+                    last_login = td.text.strip().replace(" (the)", "").replace(" (The)", "")
+
+        final_report = (
+            f"<u><b>Mᴏʙɪʟᴇ Lᴇɢᴇɴᴅs Bᴀɴɢ Bᴀɴɢ</b></u>\n\n"
+            f"🆔 <code>{'User ID' :<9}:</code> <code>{game_id}</code> (<code>{zone_id}</code>)\n"
+            f"👤 <code>{'Nickname':<9}:</code> {ig_name}\n"
+            f"🌍 <code>{'Region'  :<9}:</code> {region}\n"
+            f"📍 <code>{'Login'   :<9}:</code> {last_login}\n"
+            f"────────────────"
+        )
+
+        await loading_msg.edit_text(final_report, parse_mode=ParseMode.HTML)
+    except Exception as e: 
+        await loading_msg.edit_text(f"❌ System Error: {str(e)}", parse_mode=ParseMode.HTML)
+
+
+@dp.message(or_f(Command("region"), F.text.regexp(r"(?i)^\.region(?:$|\s+)")))
 async def handle_check_role(message: types.Message):
 
     if not await is_authorized(message.from_user.id):
