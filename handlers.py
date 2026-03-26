@@ -742,62 +742,228 @@ async def check_cookie_status(message: types.Message):
 @dp.message(or_f(Command("role"), F.text.regexp(r"(?i)^\.role(?:$|\s+)")))
 async def handle_check_role(message: types.Message):
 
-    if not await is_authorized(message.from_user.id): return await message.reply("ɴᴏᴛ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀ.")
+    if not await is_authorized(message.from_user.id):
+        return await message.reply("ɴᴏᴛ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀ.")
+    
     match = re.search(r"(?i)^[./]?role\s+(\d+)\s*[\(]?\s*(\d+)\s*[\)]?", message.text.strip())
-    if not match: return await message.reply("❌ Invalid format. Use: `.role 12345678 1234`")
+    if not match:
+        return await message.reply("❌ Invalid format. Use: `.role 12345678 1234`")
     
     game_id, zone_id = match.group(1).strip(), match.group(2).strip()
-    loading_msg = await message.reply("Checking region", parse_mode=ParseMode.HTML)
+    loading_msg = await message.reply("Checking account data...", parse_mode=ParseMode.HTML)
 
-    url = 'https://coldofficialstore.com/api/name-checker/mlbb'
-    params = {
-        'user_id': game_id,
-        'server_id': zone_id,
+    # ⚠️ သင့်ရဲ့ API အသစ် Link ကို ဒီနေရာမှာ အစားထိုးထည့်ပေးပါ
+    api_url = 'https://yanjiestore.com/index.php/check-region-mlbb'
+    
+    # API တောင်းတဲ့ပုံစံပေါ်မူတည်ပြီး 'id' (သို့) 'uid' ပြောင်းသုံးနိုင်ပါတယ်
+    payload = {
+        'uid': game_id,
+        'server': zone_id
     }
     
     headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Pragma': 'no-cache',
-        'Referer': 'https://coldofficialstore.com/name-checker',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Accept': 'application/json'
     }
 
     try:
+        # API တစ်ခုတည်းကိုသာ လှမ်းခေါ်တော့မည်ဖြစ်၍ ပိုမြန်ဆန်သွားပါမည်
         async with AsyncSession(impersonate="safari_ios") as local_scraper:
-            res = await local_scraper.get(url, params=params, headers=headers, timeout=15)
+            res = await local_scraper.post(api_url, data=payload, headers=headers, timeout=15)
         
         try:
             data = res.json()
         except Exception:
-            return await loading_msg.edit_text(f"❌ API Error: Invalid Response.\n\n<code>{res.text[:100]}...</code>", parse_mode=ParseMode.HTML)
+            return await loading_msg.edit_text(
+                f"❌ API Error: Invalid Response.\n\n<code>{res.text[:100]}...</code>",
+                parse_mode=ParseMode.HTML
+            )
 
+        # Status ကို စစ်ဆေးခြင်း
+        if not data.get('status'):
+            error_msg = data.get('msg') or data.get('message') or "Game ID သို့မဟုတ် Zone ID မှားယွင်းနေပါသည်။"
+            return await loading_msg.edit_text(
+                f"❌ **Invalid Account:** <code>{error_msg}</code>",
+                parse_mode=ParseMode.HTML
+            )
+
+        # JSON အသစ်ပုံစံအရ 'data' အခန်းထဲမှ အချက်အလက်များကို ဆွဲထုတ်ခြင်း
         user_data = data.get('data', {})
-        ig_name = user_data.get('username', 'Unknown')
+        ig_name = user_data.get('nick', 'Unknown')
+        country_code = user_data.get('region', 'Unknown')
         
-        if not ig_name or str(ig_name).strip() == "" or ig_name == 'Unknown':
-            return await loading_msg.edit_text("❌ **Invalid Account:** Game ID or Zone ID is incorrect or not found.", parse_mode=ParseMode.HTML)
-            
-        country_code = user_data.get('country', 'Unknown')
-        country_map = {"MM": "Myanmar", "FR": "France", "MY": "Malaysia", "PH": "Philippines", "ID": "Indonesia", "BR": "Brazil", "SG": "Singapore", "KH": "Cambodia", "TH": "Thailand"}
+        country_map = {
+            # Asia
+            "MM": "Myanmar",
+            "MY": "Malaysia",
+            "PH": "Philippines",
+            "ID": "Indonesia",
+            "SG": "Singapore",
+            "KH": "Cambodia",
+            "TH": "Thailand",
+            "JP": "Japan",
+            "KR": "South Korea",
+            "CN": "China",
+            "TW": "Taiwan",
+            "HK": "Hong Kong",
+            "VN": "Vietnam",
+            "LA": "Laos",
+            "BN": "Brunei",
+            "TL": "Timor-Leste",
+            "IN": "India",
+            "PK": "Pakistan",
+            "BD": "Bangladesh",
+            "LK": "Sri Lanka",
+            "NP": "Nepal",
+            "BT": "Bhutan",
+            "MV": "Maldives",
+            "AF": "Afghanistan",
+            "IR": "Iran",
+            "IQ": "Iraq",
+            "SA": "Saudi Arabia",
+            "AE": "United Arab Emirates",
+            "QA": "Qatar",
+            "KW": "Kuwait",
+            "OM": "Oman",
+            "YE": "Yemen",
+            "JO": "Jordan",
+            "LB": "Lebanon",
+            "IL": "Israel",
+            "SY": "Syria",
+            "TR": "Turkey",
+            "AZ": "Azerbaijan",
+            "GE": "Georgia",
+            "AM": "Armenia",
+            "KZ": "Kazakhstan",
+            "UZ": "Uzbekistan",
+            "TM": "Turkmenistan",
+            "KG": "Kyrgyzstan",
+            "TJ": "Tajikistan",
+            "MN": "Mongolia",
+            # Europe
+            "FR": "France",
+            "GB": "United Kingdom",
+            "DE": "Germany",
+            "IT": "Italy",
+            "ES": "Spain",
+            "PT": "Portugal",
+            "NL": "Netherlands",
+            "BE": "Belgium",
+            "LU": "Luxembourg",
+            "CH": "Switzerland",
+            "AT": "Austria",
+            "PL": "Poland",
+            "CZ": "Czech Republic",
+            "SK": "Slovakia",
+            "HU": "Hungary",
+            "RO": "Romania",
+            "BG": "Bulgaria",
+            "GR": "Greece",
+            "SE": "Sweden",
+            "NO": "Norway",
+            "FI": "Finland",
+            "DK": "Denmark",
+            "IS": "Iceland",
+            "IE": "Ireland",
+            "UA": "Ukraine",
+            "BY": "Belarus",
+            "LT": "Lithuania",
+            "LV": "Latvia",
+            "EE": "Estonia",
+            "HR": "Croatia",
+            "SI": "Slovenia",
+            "BA": "Bosnia and Herzegovina",
+            "RS": "Serbia",
+            "ME": "Montenegro",
+            "MK": "North Macedonia",
+            "AL": "Albania",
+            "MD": "Moldova",
+            # Americas
+            "BR": "Brazil",
+            "US": "United States",
+            "CA": "Canada",
+            "MX": "Mexico",
+            "AR": "Argentina",
+            "CL": "Chile",
+            "PE": "Peru",
+            "CO": "Colombia",
+            "VE": "Venezuela",
+            "EC": "Ecuador",
+            "BO": "Bolivia",
+            "PY": "Paraguay",
+            "UY": "Uruguay",
+            "GY": "Guyana",
+            "SR": "Suriname",
+            "PA": "Panama",
+            "CR": "Costa Rica",
+            "NI": "Nicaragua",
+            "HN": "Honduras",
+            "SV": "El Salvador",
+            "GT": "Guatemala",
+            "BZ": "Belize",
+            "CU": "Cuba",
+            "DO": "Dominican Republic",
+            "PR": "Puerto Rico",
+            "JM": "Jamaica",
+            "HT": "Haiti",
+            "BS": "Bahamas",
+            "TT": "Trinidad and Tobago",
+            # Africa
+            "ZA": "South Africa",
+            "EG": "Egypt",
+            "NG": "Nigeria",
+            "KE": "Kenya",
+            "TZ": "Tanzania",
+            "UG": "Uganda",
+            "RW": "Rwanda",
+            "ET": "Ethiopia",
+            "GH": "Ghana",
+            "SN": "Senegal",
+            "CI": "Ivory Coast",
+            "MA": "Morocco",
+            "TN": "Tunisia",
+            "DZ": "Algeria",
+            "LY": "Libya",
+            "SD": "Sudan",
+            "SS": "South Sudan",
+            "ZM": "Zambia",
+            "ZW": "Zimbabwe",
+            "MW": "Malawi",
+            "MZ": "Mozambique",
+            "AO": "Angola",
+            "NA": "Namibia",
+            "BW": "Botswana",
+            "MG": "Madagascar",
+            "MU": "Mauritius",
+            # Oceania
+            "AU": "Australia",
+            "NZ": "New Zealand",
+            "FJ": "Fiji",
+            "PG": "Papua New Guinea",
+            "SB": "Solomon Islands",
+            "VU": "Vanuatu",
+            "WS": "Samoa",
+            "TO": "Tonga"
+        }
+        
         final_region = country_map.get(str(country_code).upper(), country_code)
 
         limit_50 = limit_150 = limit_250 = limit_500 = True 
         
-        bonus_limits = data.get('data2', {}).get('bonus_limit', [])
+        bonus_limits = user_data.get('rechargeBonus', [])
         for item in bonus_limits:
-            title = str(item.get('title', ''))
-            reached_limit = item.get('reached_limit', True) 
+            title = str(item.get('title', '')).lower()
+            # Status က 'Available' ဖြစ်မှသာ မသုံးရသေးဘူးလို့ သတ်မှတ်ပါမယ်
+            is_unavailable = (str(item.get('status', '')).lower() != 'available')
             
-            if "50+50" in title: limit_50 = reached_limit
-            elif "150+150" in title: limit_150 = reached_limit
-            elif "250+250" in title: limit_250 = reached_limit
-            elif "500+500" in title: limit_500 = reached_limit
+            if "50+50" in title:
+                limit_50 = is_unavailable
+            elif "150+150" in title:
+                limit_150 = is_unavailable
+            elif "250+250" in title:
+                limit_250 = is_unavailable
+            elif "500+500" in title:
+                limit_500 = is_unavailable
 
         style_50 = "danger" if limit_50 else "success"
         style_150 = "danger" if limit_150 else "success"
@@ -825,7 +991,8 @@ async def handle_check_role(message: types.Message):
         )
 
         await loading_msg.edit_text(final_report, reply_markup=keyboard, parse_mode=ParseMode.HTML)
-    except Exception as e: 
+        
+    except Exception as e:
         await loading_msg.edit_text(f"❌ System Error: {str(e)}", parse_mode=ParseMode.HTML)
 
 @dp.message(or_f(Command("checkcus"), Command("cus"), F.text.regexp(r"(?i)^\.(?:checkcus|cus)(?:$|\s+)")))
