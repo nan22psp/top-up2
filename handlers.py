@@ -774,9 +774,8 @@ async def handle_check_role(message: types.Message):
     }
 
     try:
-        # API တစ်ခုတည်းကိုသာ လှမ်းခေါ်တော့မည်ဖြစ်၍ ပိုမြန်ဆန်သွားပါမည်
-        async with AsyncSession(impersonate="safari_ios") as local_scraper:
-            res = await local_scraper.post(api_url, data=payload, headers=headers, timeout=15)
+        async with AsyncSession(impersonate="chrome124") as local_scraper:
+            res = await local_scraper.get(url, params=params, headers=headers, timeout=15)
         
         try:
             data = res.json()
