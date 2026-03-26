@@ -747,12 +747,12 @@ async def check_cookie_status(message: types.Message):
     except Exception as e: await loading_msg.edit_text(f"❌ Error checking cookie: {str(e)}")
 
 
-@dp.message(or_f(Command("role"), F.text.regexp(r"(?i)^\.role(?:$|\s+)")))
+@dp.message(or_f(Command("reg"), F.text.regexp(r"(?i)^\.reg(?:$|\s+)")))
 async def handle_check_role(message: types.Message):
 
     if not await is_authorized(message.from_user.id): return await message.reply("ɴᴏᴛ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀ.")
-    match = re.search(r"(?i)^[./]?role\s+(\d+)\s*[\(]?\s*(\d+)\s*[\)]?", message.text.strip())
-    if not match: return await message.reply("❌ Invalid format. Use: `.role 12345678 1234`")
+    match = re.search(r"(?i)^[./]?reg\s+(\d+)\s*[\(]?\s*(\d+)\s*[\)]?", message.text.strip())
+    if not match: return await message.reply("❌ Invalid format. Use: `.reg 12345678 1234`")
     
     game_id, zone_id = match.group(1).strip(), match.group(2).strip()
     loading_msg = await message.reply("Checking account region...", parse_mode=ParseMode.HTML)
@@ -828,7 +828,7 @@ async def handle_check_role(message: types.Message):
         await loading_msg.edit_text(f"❌ System Error: {str(e)}", parse_mode=ParseMode.HTML)
 
 
-@dp.message(or_f(Command("region"), F.text.regexp(r"(?i)^\.region(?:$|\s+)")))
+@dp.message(or_f(Command("role"), F.text.regexp(r"(?i)^\.role(?:$|\s+)")))
 async def handle_check_role(message: types.Message):
 
     if not await is_authorized(message.from_user.id):
@@ -857,7 +857,7 @@ async def handle_check_role(message: types.Message):
 
     try:
         async with AsyncSession(impersonate="chrome124") as local_scraper:
-            res = await local_scraper.get(url, params=params, headers=headers, timeout=15)
+            res = await local_scraper.post(api_url, data=payload, headers=headers, timeout=15)
         
         try:
             data = res.json()
