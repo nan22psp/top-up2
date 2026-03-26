@@ -774,7 +774,7 @@ async def handle_check_role(message: types.Message):
 
     try:
         # ⚠️ အရေးကြီး: PizzoShop သို့ Request ပို့ရာတွင် GET ဖြင့် Cookie အရင်ယူမည်
-        async with AsyncSession(impersonate="safari_ios") as local_scraper:
+        async with AsyncSession(impersonate="chrome124") as local_scraper:
             await local_scraper.get(url, headers=headers, timeout=15)
             res = await local_scraper.post(url, data=payload, headers=headers, timeout=15)
         
