@@ -831,228 +831,107 @@ async def handle_check_role(message: types.Message):
 @dp.message(or_f(Command("role"), F.text.regexp(r"(?i)^\.role(?:$|\s+)")))
 async def handle_check_role(message: types.Message):
 
-    if not await is_authorized(message.from_user.id):
-        return await message.reply("ɴᴏᴛ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀ.")
-    
+    if not await is_authorized(message.from_user.id): return await message.reply("ɴᴏᴛ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀ.")
     match = re.search(r"(?i)^[./]?role\s+(\d+)\s*[\(]?\s*(\d+)\s*[\)]?", message.text.strip())
-    if not match:
-        return await message.reply("❌ Invalid format. Use: `.role 12345678 1234`")
+    if not match: return await message.reply("❌ Invalid format. Use: `.role 12345678 1234`")
     
     game_id, zone_id = match.group(1).strip(), match.group(2).strip()
     loading_msg = await message.reply("Checking account data...", parse_mode=ParseMode.HTML)
 
-    # ⚠️ သင့်ရဲ့ API အသစ် Link ကို ဒီနေရာမှာ အစားထိုးထည့်ပေးပါ
-    api_url = 'https://yanjiestore.com/index.php/check-region-mlbb'
-    
-    # API တောင်းတဲ့ပုံစံပေါ်မူတည်ပြီး 'id' (သို့) 'uid' ပြောင်းသုံးနိုင်ပါတယ်
-    payload = {
-        'uid': game_id,
-        'server': zone_id
+    # ---------------------------------------------------------
+    # ၁။ PizzoShop API (Name, Region, Last Login စစ်ဆေးရန်)
+    # ---------------------------------------------------------
+    url_pizzo = 'https://pizzoshop.com/mlchecker/check'
+    payload_pizzo = {
+        'user_id': game_id,
+        'zone_id': zone_id
     }
-    
-    headers = {
+    headers_pizzo = {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-        'Accept': 'application/json'
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://pizzoshop.com',
+        'Referer': 'https://pizzoshop.com/mlchecker/check',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    }
+
+    # ---------------------------------------------------------
+    # ၂။ Malsawma Store API (Double Diamond Bonus စစ်ဆေးရန်)
+    # ---------------------------------------------------------
+    url_malsawma = 'https://www.malsawmastore.in/gadget/doublediamonds_action.php'
+    payload_malsawma = {
+        'id': game_id,
+        'zone': zone_id
+    }
+    headers_malsawma = {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Origin': 'https://www.malsawmastore.in',
+        'Referer': 'https://www.malsawmastore.in/gadget/doublediamonds',
+        'Accept': 'application/json, text/javascript, */*; q=0.01'
     }
 
     try:
-        async with AsyncSession(impersonate="chrome124") as local_scraper:
-            res = await local_scraper.post(api_url, data=payload, headers=headers, timeout=15)
-        
-        try:
-            data = res.json()
-        except Exception:
-            return await loading_msg.edit_text(
-                f"❌ API Error: Invalid Response.\n\n<code>{res.text[:100]}...</code>",
-                parse_mode=ParseMode.HTML
-            )
-
-        # Status ကို စစ်ဆေးခြင်း
-        if not data.get('status'):
-            error_msg = data.get('msg') or data.get('message') or "Game ID သို့မဟုတ် Zone ID မှားယွင်းနေပါသည်။"
-            return await loading_msg.edit_text(
-                f"❌ **Invalid Account:** <code>{error_msg}</code>",
-                parse_mode=ParseMode.HTML
-            )
-
-        # JSON အသစ်ပုံစံအရ 'data' အခန်းထဲမှ အချက်အလက်များကို ဆွဲထုတ်ခြင်း
-        user_data = data.get('data', {})
-        ig_name = user_data.get('nick', 'Unknown')
-        country_code = user_data.get('region', 'Unknown')
-        
-        country_map = {
-            # Asia
-            "MM": "Myanmar",
-            "MY": "Malaysia",
-            "PH": "Philippines",
-            "ID": "Indonesia",
-            "SG": "Singapore",
-            "KH": "Cambodia",
-            "TH": "Thailand",
-            "JP": "Japan",
-            "KR": "South Korea",
-            "CN": "China",
-            "TW": "Taiwan",
-            "HK": "Hong Kong",
-            "VN": "Vietnam",
-            "LA": "Laos",
-            "BN": "Brunei",
-            "TL": "Timor-Leste",
-            "IN": "India",
-            "PK": "Pakistan",
-            "BD": "Bangladesh",
-            "LK": "Sri Lanka",
-            "NP": "Nepal",
-            "BT": "Bhutan",
-            "MV": "Maldives",
-            "AF": "Afghanistan",
-            "IR": "Iran",
-            "IQ": "Iraq",
-            "SA": "Saudi Arabia",
-            "AE": "United Arab Emirates",
-            "QA": "Qatar",
-            "KW": "Kuwait",
-            "OM": "Oman",
-            "YE": "Yemen",
-            "JO": "Jordan",
-            "LB": "Lebanon",
-            "IL": "Israel",
-            "SY": "Syria",
-            "TR": "Turkey",
-            "AZ": "Azerbaijan",
-            "GE": "Georgia",
-            "AM": "Armenia",
-            "KZ": "Kazakhstan",
-            "UZ": "Uzbekistan",
-            "TM": "Turkmenistan",
-            "KG": "Kyrgyzstan",
-            "TJ": "Tajikistan",
-            "MN": "Mongolia",
-            # Europe
-            "FR": "France",
-            "GB": "United Kingdom",
-            "DE": "Germany",
-            "IT": "Italy",
-            "ES": "Spain",
-            "PT": "Portugal",
-            "NL": "Netherlands",
-            "BE": "Belgium",
-            "LU": "Luxembourg",
-            "CH": "Switzerland",
-            "AT": "Austria",
-            "PL": "Poland",
-            "CZ": "Czech Republic",
-            "SK": "Slovakia",
-            "HU": "Hungary",
-            "RO": "Romania",
-            "BG": "Bulgaria",
-            "GR": "Greece",
-            "SE": "Sweden",
-            "NO": "Norway",
-            "FI": "Finland",
-            "DK": "Denmark",
-            "IS": "Iceland",
-            "IE": "Ireland",
-            "UA": "Ukraine",
-            "BY": "Belarus",
-            "LT": "Lithuania",
-            "LV": "Latvia",
-            "EE": "Estonia",
-            "HR": "Croatia",
-            "SI": "Slovenia",
-            "BA": "Bosnia and Herzegovina",
-            "RS": "Serbia",
-            "ME": "Montenegro",
-            "MK": "North Macedonia",
-            "AL": "Albania",
-            "MD": "Moldova",
-            # Americas
-            "BR": "Brazil",
-            "US": "United States",
-            "CA": "Canada",
-            "MX": "Mexico",
-            "AR": "Argentina",
-            "CL": "Chile",
-            "PE": "Peru",
-            "CO": "Colombia",
-            "VE": "Venezuela",
-            "EC": "Ecuador",
-            "BO": "Bolivia",
-            "PY": "Paraguay",
-            "UY": "Uruguay",
-            "GY": "Guyana",
-            "SR": "Suriname",
-            "PA": "Panama",
-            "CR": "Costa Rica",
-            "NI": "Nicaragua",
-            "HN": "Honduras",
-            "SV": "El Salvador",
-            "GT": "Guatemala",
-            "BZ": "Belize",
-            "CU": "Cuba",
-            "DO": "Dominican Republic",
-            "PR": "Puerto Rico",
-            "JM": "Jamaica",
-            "HT": "Haiti",
-            "BS": "Bahamas",
-            "TT": "Trinidad and Tobago",
-            # Africa
-            "ZA": "South Africa",
-            "EG": "Egypt",
-            "NG": "Nigeria",
-            "KE": "Kenya",
-            "TZ": "Tanzania",
-            "UG": "Uganda",
-            "RW": "Rwanda",
-            "ET": "Ethiopia",
-            "GH": "Ghana",
-            "SN": "Senegal",
-            "CI": "Ivory Coast",
-            "MA": "Morocco",
-            "TN": "Tunisia",
-            "DZ": "Algeria",
-            "LY": "Libya",
-            "SD": "Sudan",
-            "SS": "South Sudan",
-            "ZM": "Zambia",
-            "ZW": "Zimbabwe",
-            "MW": "Malawi",
-            "MZ": "Mozambique",
-            "AO": "Angola",
-            "NA": "Namibia",
-            "BW": "Botswana",
-            "MG": "Madagascar",
-            "MU": "Mauritius",
-            # Oceania
-            "AU": "Australia",
-            "NZ": "New Zealand",
-            "FJ": "Fiji",
-            "PG": "Papua New Guinea",
-            "SB": "Solomon Islands",
-            "VU": "Vanuatu",
-            "WS": "Samoa",
-            "TO": "Tonga"
-        }
-        
-        final_region = country_map.get(str(country_code).upper(), country_code)
-
-        limit_50 = limit_150 = limit_250 = limit_500 = True 
-        
-        bonus_limits = user_data.get('rechargeBonus', [])
-        for item in bonus_limits:
-            title = str(item.get('title', '')).lower()
-            # Status က 'Available' ဖြစ်မှသာ မသုံးရသေးဘူးလို့ သတ်မှတ်ပါမယ်
-            is_unavailable = (str(item.get('status', '')).lower() != 'available')
+        # API နှစ်ခုလုံးကို တစ်ပြိုင်နက်တည်း (Concurrency) ဖြင့် အမြန်လှမ်းခေါ်မည်
+        async with AsyncSession(impersonate="safari_ios") as local_scraper:
+            await local_scraper.get(url_pizzo, headers=headers_pizzo, timeout=15)
             
-            if "50+50" in title:
-                limit_50 = is_unavailable
-            elif "150+150" in title:
-                limit_150 = is_unavailable
-            elif "250+250" in title:
-                limit_250 = is_unavailable
-            elif "500+500" in title:
-                limit_500 = is_unavailable
+            res_pizzo, res_malsawma = await asyncio.gather(
+                local_scraper.post(url_pizzo, data=payload_pizzo, headers=headers_pizzo, timeout=15),
+                local_scraper.post(url_malsawma, data=payload_malsawma, headers=headers_malsawma, timeout=15)
+            )
+        
+        # ==========================================
+        # (က) PizzoShop မှ အချက်အလက်များကို ထုတ်ယူခြင်း
+        # ==========================================
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(res_pizzo.text, 'html.parser')
+        table = soup.find('table', class_='table-modern')
+        
+        if not table:
+             if "just a moment" in res_pizzo.text.lower() or "cloudflare" in res_pizzo.text.lower():
+                 return await loading_msg.edit_text("❌ **Security Block:** PizzoShop ၏ Cloudflare မှ ပိတ်ထားပါသည်။", parse_mode=ParseMode.HTML)
+             debug_msg = res_pizzo.text[:120].replace('<', '&lt;').replace('>', '&gt;').strip()
+             return await loading_msg.edit_text(f"❌ **Invalid Account or Error:**\n<code>{debug_msg}...</code>", parse_mode=ParseMode.HTML)
 
+        ig_name = "Unknown"
+        region = "Unknown"
+        last_login = "Unknown"
+
+        rows = table.find_all('tr')
+        for row in rows:
+            th = row.find('th')
+            td = row.find('td')
+            if th and td:
+                th_text = th.text.strip().lower()
+                if 'nickname' in th_text: ig_name = td.text.strip()
+                elif 'region id' in th_text: region = td.text.strip().replace(" (the)", "").replace(" (The)", "")
+                elif 'last login' in th_text: last_login = td.text.strip().replace(" (the)", "").replace(" (The)", "")
+
+        # ==========================================
+        # (ခ) Malsawma မှ Double Diamond အချက်အလက်များကို ထုတ်ယူခြင်း (JSON အသစ်ပုံစံ)
+        # ==========================================
+        # မူလသတ်မှတ်ချက်ကို True (Limit ပြည့်ပြီး / မရနိုင်တော့) ဟုထားမည်
+        limit_50 = limit_150 = limit_250 = limit_500 = True 
+        debug_bonus_error = ""
+
+        try:
+            data_double = res_malsawma.json()
+            if str(data_double.get('status', '')).lower() == 'true':
+                dd_data = data_double.get('dd', {})
+                
+                # JSON မှ True (ရနိုင်သည်) ဆိုလျှင် limit_xx ကို False (Limit မပြည့်သေး) ဟု ပြောင်းမည်။ 
+                # False ပြန်လာလျှင် True (Limit ပြည့်သွားပြီ) ဟု သတ်မှတ်မည်။
+                limit_50 = not dd_data.get('50', False)
+                limit_150 = not dd_data.get('150', False)
+                limit_250 = not dd_data.get('250', False)
+                limit_500 = not dd_data.get('500', False)
+            else:
+                debug_bonus_error = " <i>(Bonus Data Unavailable)</i>"
+        except Exception as e:
+            debug_bonus_error = " <i>(Bonus Data Error)</i>"
+
+        # ==========================================
+        # (ဂ) Keyboard နှင့် Report ထုတ်ပေးခြင်း
+        # ==========================================
         style_50 = "danger" if limit_50 else "success"
         style_150 = "danger" if limit_150 else "success"
         style_250 = "danger" if limit_250 else "success"
@@ -1073,14 +952,14 @@ async def handle_check_role(message: types.Message):
             f"<u><b>Mᴏʙɪʟᴇ Lᴇɢᴇɴᴅs Bᴀɴɢ Bᴀɴɢ</b></u>\n\n"
             f"🆔 <code>{'User ID' :<9}:</code> <code>{game_id}</code> (<code>{zone_id}</code>)\n"
             f"👤 <code>{'Nickname':<9}:</code> {ig_name}\n"
-            f"🌍 <code>{'Region'  :<9}:</code> {final_region}\n"
+            f"🌍 <code>{'Region'  :<9}:</code> {region}\n"
+           # f"📍 <code>{'Login'   :<9}:</code> {last_login}\n"
             f"────────────────\n\n"
-            f"🎁 <b>Fɪʀsᴛ Rᴇᴄʜᴀʀɢᴇ Bᴏɴᴜs Sᴛᴀᴛᴜs</b>"
+            f"🎁 <b>Fɪʀsᴛ Rᴇᴄʜᴀʀɢᴇ Bᴏɴᴜs Sᴛᴀᴛᴜs</b>{debug_bonus_error}"
         )
 
         await loading_msg.edit_text(final_report, reply_markup=keyboard, parse_mode=ParseMode.HTML)
-        
-    except Exception as e:
+    except Exception as e: 
         await loading_msg.edit_text(f"❌ System Error: {str(e)}", parse_mode=ParseMode.HTML)
 
 @dp.message(or_f(Command("checkcus"), Command("cus"), F.text.regexp(r"(?i)^\.(?:checkcus|cus)(?:$|\s+)")))
