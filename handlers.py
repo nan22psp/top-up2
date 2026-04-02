@@ -864,7 +864,7 @@ async def handle_check_role(message: types.Message):
 
     try:
 
-        async with AsyncSession(impersonate="chrome137") as local_scraper:
+        async with AsyncSession(impersonate="safari_ios") as local_scraper:
 
             await local_scraper.get('https://cekidml.caliph.dev/', headers=headers_caliph, timeout=15)
             
