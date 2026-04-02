@@ -268,33 +268,35 @@ async def process_smile_one_order(game_id, zone_id, product_id, currency_name, p
     except Exception as e: 
         return {"status": "error", "message": f"System Error: {str(e)}", "ig_name": known_ig_name}
 
+
 async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_context=None, skip_role_check=False, known_ig_name="Unknown", last_success_order_id=""):
     scraper = await get_main_scraper()
     global GLOBAL_CSRF
     cache_key = f"mcc_{currency_name.lower()}"
 
+
     if currency_name == 'PH':
         main_url = 'https://www.smile.one/ph/merchant/game/magicchessgogo'
         checkrole_url = 'https://www.smile.one/ph/merchant/game/checkrole'
-        query_url = 'https://www.smile.one/ph/merchant/game/query'
-        pay_url = 'https://www.smile.one/ph/merchant/game/pay'
+        query_url = 'https://www.smile.one/ph/merchant/game/createorder' 
+        pay_url = 'https://www.smile.one/merchant/game/pay'
         order_api_url = 'https://www.smile.one/ph/customer/activationcode/codelist'
     else:
         main_url = 'https://www.smile.one/br/merchant/game/magicchessgogo'
         checkrole_url = 'https://www.smile.one/br/merchant/game/checkrole'
-        query_url = 'https://www.smile.one/br/merchant/game/query'
-        pay_url = 'https://www.smile.one/br/merchant/game/pay'
+        query_url = 'https://www.smile.one/br/merchant/game/createorder' 
+        pay_url = 'https://www.smile.one/merchant/game/pay'
         order_api_url = 'https://www.smile.one/br/customer/activationcode/codelist'
     
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest', 
         'Referer': main_url, 
         'Origin': 'https://www.smile.one'
     }
-
-
-    mcc_params = {'product': 'magicchessgogo'}
 
     try:
         csrf_token = prev_context.get('csrf_token') if prev_context else GLOBAL_CSRF.get(cache_key)
@@ -312,31 +314,44 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
             GLOBAL_CSRF[cache_key] = csrf_token
 
         async def get_flow_id():
-     
-            query_data = {'uid': game_id, 'sid': zone_id, 'pid': product_id, 'checkrole': '', 'pay_methond': 'smilecoin', 'channel_method': 'smilecoin', '_csrf': csrf_token}
-            return await scraper.post(query_url, params=mcc_params, data=query_data, headers=headers)
+            query_data = {
+                'uid': game_id,
+                'sid': zone_id,
+                'productid': product_id,
+                'channel_method': 'smilecoin',
+                'external': 'false'
+            }
+            return await scraper.post(query_url, params={'product': 'magicchessgogo'}, data=query_data, headers=headers)
 
         async def check_role():
-
-            check_data = {'uid': game_id, 'sid': zone_id, '_csrf': csrf_token}
-            return await scraper.post(checkrole_url, params=mcc_params, data=check_data, headers=headers)
+            check_data = {
+                'uid': game_id,
+                'sid': zone_id,
+                'checkrole': '1'
+            }
+            return await scraper.post(checkrole_url, params={'product': 'magicchessgogo'}, data=check_data, headers=headers)
 
         if skip_role_check:
             query_response_raw = await get_flow_id()
         else:
             query_response_raw, role_response_raw = await asyncio.gather(get_flow_id(), check_role())
+            
             try:
                 role_result = role_response_raw.json()
-                fetched_name = role_result.get('username') or role_result.get('data', {}).get('username')
+                
+                fetched_name = role_result.get('nickname') or role_result.get('username') or role_result.get('role_name') or role_result.get('data', {}).get('nickname') or role_result.get('data', {}).get('username')
+                
                 if fetched_name and str(fetched_name).strip() != "":
                     ig_name = str(fetched_name).strip()
                 else:
-                    return {"status": "error", "message": "Account not found.", "ig_name": "Unknown"}
+                    ig_name = "Unknown" 
             except Exception: 
-                return {"status": "error", "message": "⚠️ Check Role API Error.", "ig_name": ig_name}
+                ig_name = "Unknown"
 
-        try: query_result = query_response_raw.json()
-        except Exception: return {"status": "error", "message": "Query API Error", "ig_name": ig_name}
+        try: 
+            query_result = query_response_raw.json()
+        except Exception: 
+            return {"status": "error", "message": "Query API Error: Failed to load JSON.", "ig_name": ig_name}
             
         flowid = query_result.get('flowid') or query_result.get('data', {}).get('flowid')
         
@@ -354,9 +369,22 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
             error_display = str(real_error) if real_error else "Invalid account or unable to purchase."
             return {"status": "error", "message": error_display, "ig_name": ig_name}
 
-        
-        pay_data = {'_csrf': csrf_token, 'uid': game_id, 'sid': zone_id, 'pay_methond': 'smilecoin', 'product_id': product_id, 'channel_method': 'smilecoin', 'flowid': flowid, 'email': '', 'coupon_id': ''}
-        pay_response_raw = await scraper.post(pay_url, params=mcc_params, data=pay_data, headers=headers)
+        pay_data = {
+            '_csrf': csrf_token,
+            'uid': game_id,
+            'sid': zone_id,
+            'email': '',
+            'pay_methond': 'smilecoin',
+            'channel_method': 'smilecoin',
+            'flowid': flowid,
+            'pay_country': '',
+            'coupon_id': '',
+            'zipcode': '',
+            'product': 'magicchessgogo',
+            'productid': product_id,
+            'external': 'false'
+        }
+        pay_response_raw = await scraper.post(pay_url, data=pay_data, headers=headers)
         pay_text = pay_response_raw.text.lower()
         
         if "saldo insuficiente" in pay_text or "insufficient" in pay_text:
@@ -388,10 +416,7 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
                 hist_json = hist_res_raw.json()
                 if 'list' in hist_json and len(hist_json['list']) > 0:
                     for order in hist_json['list']:
-
-                        current_uid = str(order.get('user_id') or order.get('role_id'))
-                        current_sid = str(order.get('server_id') or order.get('zone_id'))
-                        if current_uid == str(game_id) and current_sid == str(zone_id):
+                        if str(order.get('user_id')) == str(game_id) and str(order.get('server_id')) == str(zone_id):
                             current_order_id = str(order.get('increment_id', ""))
                             if current_order_id != last_success_order_id:
                                 if str(order.get('order_status', '')).lower() in ['success', '1'] or str(order.get('status')) == '1':
