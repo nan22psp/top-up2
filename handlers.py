@@ -773,7 +773,7 @@ async def handle_check_role(message: types.Message):
     }
 
     try:
-        # ⚠️ အရေးကြီး: PizzoShop သို့ Request ပို့ရာတွင် GET ဖြင့် Cookie အရင်ယူမည်
+
         async with AsyncSession(impersonate="chrome124") as local_scraper:
             await local_scraper.get(url, headers=headers, timeout=15)
             res = await local_scraper.post(url, data=payload, headers=headers, timeout=15)
@@ -838,78 +838,64 @@ async def handle_check_role(message: types.Message):
     game_id, zone_id = match.group(1).strip(), match.group(2).strip()
     loading_msg = await message.reply("Checking account data...", parse_mode=ParseMode.HTML)
 
-    # ---------------------------------------------------------
-    # ၁။ PizzoShop API (Name, Region, Last Login စစ်ဆေးရန်)
-    # ---------------------------------------------------------
-    url_pizzo = 'https://pizzoshop.com/mlchecker/check'
-    payload_pizzo = {
-        'user_id': game_id,
-        'zone_id': zone_id
+    url_caliph = 'https://cekidml.caliph.dev/api/validasi'
+    params_caliph = {
+        'id': game_id,
+        'serverid': zone_id
     }
-    headers_pizzo = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://pizzoshop.com',
-        'Referer': 'https://pizzoshop.com/mlchecker/check',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    headers_caliph = {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Referer': 'https://cekidml.caliph.dev/',
+        'X-Requested-With': 'XMLHttpRequest'
     }
 
-    # ---------------------------------------------------------
-    # ၂။ Malsawma Store API (Double Diamond Bonus စစ်ဆေးရန်)
-    # ---------------------------------------------------------
     url_malsawma = 'https://www.malsawmastore.in/gadget/doublediamonds_action.php'
     payload_malsawma = {
         'id': game_id,
         'zone': zone_id
     }
     headers_malsawma = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
         'Origin': 'https://www.malsawmastore.in',
         'Referer': 'https://www.malsawmastore.in/gadget/doublediamonds',
         'Accept': 'application/json, text/javascript, */*; q=0.01'
     }
 
     try:
-        # API နှစ်ခုလုံးကို တစ်ပြိုင်နက်တည်း (Concurrency) ဖြင့် အမြန်လှမ်းခေါ်မည်
-        async with AsyncSession(impersonate="safari_ios") as local_scraper:
-            await local_scraper.get(url_pizzo, headers=headers_pizzo, timeout=15)
+
+        async with AsyncSession(impersonate="chrome137") as local_scraper:
+
+            await local_scraper.get('https://cekidml.caliph.dev/', headers=headers_caliph, timeout=15)
             
-            res_pizzo, res_malsawma = await asyncio.gather(
-                local_scraper.post(url_pizzo, data=payload_pizzo, headers=headers_pizzo, timeout=15),
+            res_caliph, res_malsawma = await asyncio.gather(
+                local_scraper.get(url_caliph, params=params_caliph, headers=headers_caliph, timeout=15),
                 local_scraper.post(url_malsawma, data=payload_malsawma, headers=headers_malsawma, timeout=15)
             )
         
         # ==========================================
-        # (က) PizzoShop မှ အချက်အလက်များကို ထုတ်ယူခြင်း
+        # (က) Caliph API မှ အချက်အလက်များကို ထုတ်ယူခြင်း (JSON)
         # ==========================================
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(res_pizzo.text, 'html.parser')
-        table = soup.find('table', class_='table-modern')
-        
-        if not table:
-             if "just a moment" in res_pizzo.text.lower() or "cloudflare" in res_pizzo.text.lower():
-                 return await loading_msg.edit_text("❌ **Security Block:** PizzoShop ၏ Cloudflare မှ ပိတ်ထားပါသည်။", parse_mode=ParseMode.HTML)
-             debug_msg = res_pizzo.text[:120].replace('<', '&lt;').replace('>', '&gt;').strip()
-             return await loading_msg.edit_text(f"❌ **Invalid Account or Error:**\n<code>{debug_msg}...</code>", parse_mode=ParseMode.HTML)
-
         ig_name = "Unknown"
         region = "Unknown"
-        last_login = "Unknown"
 
-        rows = table.find_all('tr')
-        for row in rows:
-            th = row.find('th')
-            td = row.find('td')
-            if th and td:
-                th_text = th.text.strip().lower()
-                if 'nickname' in th_text: ig_name = td.text.strip()
-                elif 'region id' in th_text: region = td.text.strip().replace(" (the)", "").replace(" (The)", "")
-                elif 'last login' in th_text: last_login = td.text.strip().replace(" (the)", "").replace(" (The)", "")
+        try:
+            data_caliph = res_caliph.json()
+            
+            if data_caliph.get('status') == 'success':
+                result_data = data_caliph.get('result', {})
+                ig_name = result_data.get('nickname', 'Unknown')
+                region = result_data.get('country', 'Unknown')
+            else:
+                error_msg = data_caliph.get('message') or data_caliph.get('msg') or "Game ID သို့မဟုတ် Zone ID မှားယွင်းနေပါသည်။"
+                return await loading_msg.edit_text(f"❌ **Invalid Account:** {error_msg}", parse_mode=ParseMode.HTML)
 
-        # ==========================================
-        # (ခ) Malsawma မှ Double Diamond အချက်အလက်များကို ထုတ်ယူခြင်း (JSON အသစ်ပုံစံ)
-        # ==========================================
-        # မူလသတ်မှတ်ချက်ကို True (Limit ပြည့်ပြီး / မရနိုင်တော့) ဟုထားမည်
+        except Exception as e:
+ 
+            debug_msg = res_caliph.text[:120].replace('<', '&lt;').replace('>', '&gt;').strip()
+            return await loading_msg.edit_text(f"❌ **API Error:**\n<code>{debug_msg}...</code>", parse_mode=ParseMode.HTML)
+
+
         limit_50 = limit_150 = limit_250 = limit_500 = True 
         debug_bonus_error = ""
 
@@ -917,9 +903,6 @@ async def handle_check_role(message: types.Message):
             data_double = res_malsawma.json()
             if str(data_double.get('status', '')).lower() == 'true':
                 dd_data = data_double.get('dd', {})
-                
-                # JSON မှ True (ရနိုင်သည်) ဆိုလျှင် limit_xx ကို False (Limit မပြည့်သေး) ဟု ပြောင်းမည်။ 
-                # False ပြန်လာလျှင် True (Limit ပြည့်သွားပြီ) ဟု သတ်မှတ်မည်။
                 limit_50 = not dd_data.get('50', False)
                 limit_150 = not dd_data.get('150', False)
                 limit_250 = not dd_data.get('250', False)
@@ -929,9 +912,6 @@ async def handle_check_role(message: types.Message):
         except Exception as e:
             debug_bonus_error = " <i>(Bonus Data Error)</i>"
 
-        # ==========================================
-        # (ဂ) Keyboard နှင့် Report ထုတ်ပေးခြင်း
-        # ==========================================
         style_50 = "danger" if limit_50 else "success"
         style_150 = "danger" if limit_150 else "success"
         style_250 = "danger" if limit_250 else "success"
@@ -953,7 +933,6 @@ async def handle_check_role(message: types.Message):
             f"🆔 <code>{'User ID' :<9}:</code> <code>{game_id}</code> (<code>{zone_id}</code>)\n"
             f"👤 <code>{'Nickname':<9}:</code> {ig_name}\n"
             f"🌍 <code>{'Region'  :<9}:</code> {region}\n"
-           # f"📍 <code>{'Login'   :<9}:</code> {last_login}\n"
             f"────────────────\n\n"
             f"🎁 <b>Fɪʀsᴛ Rᴇᴄʜᴀʀɢᴇ Bᴏɴᴜs Sᴛᴀᴛᴜs</b>{debug_bonus_error}"
         )
