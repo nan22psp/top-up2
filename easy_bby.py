@@ -384,8 +384,19 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
             'productid': product_id,
             'external': 'false'
         }
-        pay_response_raw = await scraper.post(pay_url, data=pay_data, headers=headers)
-        pay_text = pay_response_raw.text.lower()
+        
+        # 🛠 အဓိက ပြင်ဆင်ချက်: Pay တွင် AJAX မသုံးဘဲ ရိုးရိုး Browser အတိုင်း Form Submit လုပ်ပါမည်
+        pay_headers = headers.copy()
+        if 'X-Requested-With' in pay_headers:
+            del pay_headers['X-Requested-With']  # Ajax Header ကို ဖြုတ်ပါမည်
+        pay_headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+
+        # allow_redirects=False ဖြင့် ဆာဗာက ဘယ်ကို ပြောင်းလဲသွားလဲဆိုတာ ဖမ်းယူပါမည်
+        pay_response_raw = await scraper.post(pay_url, data=pay_data, headers=pay_headers, allow_redirects=False)
+        
+        status_code = pay_response_raw.status_code
+        location = str(pay_response_raw.headers.get('Location') or pay_response_raw.headers.get('location') or "")
+        pay_text = pay_response_raw.text.strip().lower()
         
         if "saldo insuficiente" in pay_text or "insufficient" in pay_text:
             return {"status": "error", "message": "Insufficient balance in the Main account.", "ig_name": ig_name}
@@ -393,30 +404,46 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
         real_order_id, is_success = "Not found", False
         actual_product_name = ""
 
-        try:
-            pay_json = pay_response_raw.json()
-            status_val = str(pay_json.get('status', ''))
-            code = str(pay_json.get('code', status_val))
-            msg = str(pay_json.get('msg') or pay_json.get('message') or pay_json.get('info') or "").lower()
-            
-            if code in ['200', '0', '1'] or 'success' in msg: 
-                is_success = True
-                _id = str(pay_json.get('data', {}).get('order_id') or pay_json.get('order_id') or pay_json.get('increment_id') or "")
-                if not _id or _id == "None":
-                    _id = f"FAST_{int(time.time())}_{random.randint(100,999)}"
-                real_order_id = _id
-        except:
-            if 'success' in pay_text or 'sucesso' in pay_text: 
+        # 🛠 Redirect ဖြင့် အောင်မြင်ကြောင်း စစ်ဆေးခြင်း (Website Page ပြောင်းသွားလျှင် အောင်မြင်သည်)
+        if status_code in [301, 302, 303]:
+            if "customer/order" in location or "success" in location or "pay" in location:
                 is_success = True
                 real_order_id = f"FAST_{int(time.time())}_{random.randint(100,999)}"
+        
+        # 🛠 သို့မဟုတ် JSON / Text ဖြင့် ပြန်လာခဲ့လျှင်
+        if not is_success and pay_text:
+            try:
+                pay_json = pay_response_raw.json()
+                code = str(pay_json.get('code', pay_json.get('status', '')))
+                msg = str(pay_json.get('msg') or pay_json.get('message') or pay_json.get('info') or "").lower()
+                
+                if code in ['200', '0', '1'] or 'success' in msg: 
+                    is_success = True
+                    _id = str(pay_json.get('data', {}).get('order_id') or pay_json.get('order_id') or pay_json.get('increment_id') or "")
+                    if not _id or _id == "None":
+                        _id = f"FAST_{int(time.time())}_{random.randint(100,999)}"
+                    real_order_id = _id
+            except:
+                if 'success' in pay_text or 'sucesso' in pay_text: 
+                    is_success = True
+                    real_order_id = f"FAST_{int(time.time())}_{random.randint(100,999)}"
 
+        # 🛠 History မှ တစ်ဆင့် နောက်ဆုံးစစ်ဆေးခြင်း
+        hist_debug = ""
         if not is_success:
             try:
                 hist_res_raw = await scraper.get(order_api_url, params={'type': 'orderlist', 'p': '1', 'pageSize': '5'}, headers=headers)
                 hist_json = hist_res_raw.json()
                 if 'list' in hist_json and len(hist_json['list']) > 0:
+                    first_order = hist_json['list'][0]
+                    # Debug Info
+                    hist_debug = f" | Hist[0]: UID={first_order.get('user_id')} SID={first_order.get('server_id')}"
                     for order in hist_json['list']:
-                        if str(order.get('user_id')) == str(game_id) and str(order.get('server_id')) == str(zone_id):
+                        # MCC history တွင် uid သို့မဟုတ် user_id ကို ရှာဖွေစစ်ဆေးပါမည်
+                        uid_val = str(order.get('user_id') or order.get('uid') or "")
+                        sid_val = str(order.get('server_id') or order.get('sid') or order.get('zone_id') or "")
+                        
+                        if uid_val == str(game_id) and sid_val == str(zone_id):
                             current_order_id = str(order.get('increment_id', ""))
                             if current_order_id != last_success_order_id:
                                 if str(order.get('order_status', '')).lower() in ['success', '1'] or str(order.get('status')) == '1':
@@ -424,13 +451,21 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
                                     actual_product_name = str(order.get('product_name', ''))
                                     is_success = True
                                     break
-            except: pass
+            except Exception as e: 
+                hist_debug = f" | Hist Err: {str(e)}"
 
         if is_success:
             return {"status": "success", "ig_name": ig_name, "order_id": real_order_id, "csrf_token": csrf_token, "product_name": actual_product_name}
         else:
-            error_detail = pay_json.get('msg') or pay_json.get('message') or pay_json.get('info') if 'pay_json' in locals() else "Payment Verification Failed."
-            return {"status": "error", "message": str(error_detail), "ig_name": ig_name}
+            # အသေးစိတ် Debug Info
+            if status_code in [301, 302, 303]:
+                error_detail = f"Redirected to: {location}{hist_debug}"
+            elif not pay_text:
+                error_detail = f"Empty Response (HTTP {status_code}){hist_debug}"
+            else:
+                error_detail = f"Reply: {pay_text[:80]}...{hist_debug}"
+                
+            return {"status": "error", "message": error_detail, "ig_name": ig_name}
 
     except Exception as e: 
         return {"status": "error", "message": f"System Error: {str(e)}", "ig_name": known_ig_name}
