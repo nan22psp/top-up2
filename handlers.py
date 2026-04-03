@@ -98,7 +98,7 @@ async def execute_buy_process(message, lines, regex_pattern, currency, packages_
         user_v_bal = user_wallet.get(v_bal_key, 0.0) if user_wallet else 0.0
             
         start_time = time.time()
-        loading_msg = await message.reply(f"in processing [ {len(parsed_orders)} | 0 ] ● ᥫ᭡")
+        loading_msg = await message.reply(f"Order processing[ {len(parsed_orders)} | 0 ] ● ᥫ᭡")
 
         current_v_bal = [user_v_bal] 
 
@@ -129,22 +129,6 @@ async def execute_buy_process(message, lines, regex_pattern, currency, packages_
                     pkg_order_ids = ""
                     pkg_error = ""
                     
-                    pkg_total_price = sum(item['price'] for item in items)
-                    
-                    if current_v_bal[0] < pkg_total_price:
-                        pkg_fail_count = len(items)
-                        pkg_error = "Insufficient balance for the full package"
-                        overall_fail_count += 1
-                        package_results.append({
-                            'pkg_name': pkg_name,
-                            'status': 'fail',
-                            'spent': 0.0,
-                            'order_ids': "",
-                            'error_msg': pkg_error,
-                            'ig_name': ig_name
-                        })
-                        continue
-                    
                     for item in items:
                         if current_v_bal[0] < item['price']:
                             pkg_fail_count += 1
@@ -156,7 +140,7 @@ async def execute_buy_process(message, lines, regex_pattern, currency, packages_
                         skip_check = False 
                         res = {}
                         
-                        max_retries = 3
+                        max_retries = 2
                         for attempt in range(max_retries):
                             res = await process_func(
                                 game_id, zone_id, item['pid'], currency, 
@@ -166,18 +150,11 @@ async def execute_buy_process(message, lines, regex_pattern, currency, packages_
                             
                             error_text_check = str(res.get('message', '')).lower()
                             
-                            
-                            if res.get('status') == 'success' or "insufficient" in error_text_check or "invalid" in error_text_check or "not found" in error_text_check or "limit" in error_text_check or "exceed" in error_text_check or "máximo" in error_text_check:
+                            if res.get('status') == 'success' or "insufficient" in error_text_check or "invalid" in error_text_check or "not found" in error_text_check:
                                 break
                                 
-                            
                             if attempt < max_retries - 1:
-                                if "erro no servidor" in error_text_check or "server error" in error_text_check or "cloudflare" in error_text_check or "query failed" in error_text_check:
-
-                                    await asyncio.sleep(5.0)
-                                else:
-                                    
-                                    await asyncio.sleep(2.0)
+                                await asyncio.sleep(1.5)
                                 
                         fetched_name = res.get('ig_name') or res.get('username') or res.get('role_name') or res.get('nickname')
                         if fetched_name and str(fetched_name).strip() not in ["", "Unknown", "None"]:
