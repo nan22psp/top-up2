@@ -9,6 +9,7 @@ from curl_cffi.requests import AsyncSession
 
 import database as db
 from config import GOOGLE_EMAIL, GOOGLE_PASS, auth_lock
+from config import WEBSHARE_PROXIES
 from helpers import notify_owner
 
 # Scraper Globals (Managed here to avoid circular imports)
@@ -16,6 +17,37 @@ last_login_time = 0
 GLOBAL_SCRAPER = None
 GLOBAL_COOKIE_STR = ""
 GLOBAL_CSRF = {'mlbb_br': None, 'mlbb_ph': None, 'mcc_br': None, 'mcc_ph': None}
+
+def get_random_proxy():
+    if WEBSHARE_PROXIES:
+        proxy_url = random.choice(WEBSHARE_PROXIES)
+        return {"http": proxy_url, "https": proxy_url}
+    return None
+
+async def get_main_scraper():
+    global GLOBAL_SCRAPER, GLOBAL_COOKIE_STR, GLOBAL_CSRF
+    
+    raw_cookie = await db.get_main_cookie() or ""
+    
+    if GLOBAL_SCRAPER is None or raw_cookie != GLOBAL_COOKIE_STR:
+        cookie_dict = {}
+        if raw_cookie:
+            for item in raw_cookie.split(';'):
+                if '=' in item:
+                    k, v = item.strip().split('=', 1)
+                    cookie_dict[k.strip()] = v.strip()
+
+        proxy_dict = get_random_proxy()
+            
+        GLOBAL_SCRAPER = AsyncSession(
+            impersonate="chrome124", 
+            cookies=cookie_dict,
+            proxies=proxy_dict
+        )
+        GLOBAL_COOKIE_STR = raw_cookie
+        GLOBAL_CSRF = {'mlbb_br': None, 'mlbb_ph': None, 'mcc_br': None, 'mcc_ph': None}
+        
+    return GLOBAL_SCRAPER
 
 async def get_main_scraper():
     global GLOBAL_SCRAPER, GLOBAL_COOKIE_STR, GLOBAL_CSRF
@@ -42,7 +74,7 @@ def _sync_drission_login(email, password):
         co.set_argument('--no-sandbox')
         co.set_argument('--disable-setuid-sandbox')
         co.set_argument('--disable-blink-features=AutomationControlled')
-        co.set_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        co.set_user_agent("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36")
         
         co.headless(True) 
 
@@ -181,7 +213,15 @@ async def process_smile_one_order(game_id, zone_id, product_id, currency_name, p
             return await scraper.post(query_url, data=query_data, headers=headers)
 
         async def check_role():
-            check_data = {'user_id': game_id, 'zone_id': zone_id, '_csrf': csrf_token}
+            check_data = {
+                'user_id': game_id, 
+                'zone_id': zone_id, 
+                'pid': product_id, 
+                'checkrole': '1', 
+                'pay_methond': '', 
+                'channel_method': '', 
+                '_csrf': csrf_token
+            }
             return await scraper.post(checkrole_url, data=check_data, headers=headers)
 
         if skip_role_check:
@@ -190,7 +230,7 @@ async def process_smile_one_order(game_id, zone_id, product_id, currency_name, p
             query_response_raw, role_response_raw = await asyncio.gather(get_flow_id(), check_role())
             try:
                 role_result = role_response_raw.json()
-                fetched_name = role_result.get('username') or role_result.get('data', {}).get('username')
+                fetched_name = role_result.get('username') or role_result.get('role_name') or role_result.get('data', {}).get('username')
                 if fetched_name and str(fetched_name).strip() != "":
                     ig_name = str(fetched_name).strip()
                 else:
@@ -229,7 +269,6 @@ async def process_smile_one_order(game_id, zone_id, product_id, currency_name, p
             pay_json = pay_response_raw.json()
             status_val = str(pay_json.get('status', ''))
             code = str(pay_json.get('code', status_val))
-            
             msg = str(pay_json.get('msg') or pay_json.get('message') or pay_json.get('info') or "").lower()
             
             if code in ['200', '0', '1'] or 'success' in msg: 
@@ -244,6 +283,8 @@ async def process_smile_one_order(game_id, zone_id, product_id, currency_name, p
                 real_order_id = f"FAST_{int(time.time())}_{random.randint(100,999)}"
 
         if not is_success:
+            # 🚨 BOT က FAILED လို့မသတ်မှတ်ခင်၊ Smile.one ဆာဗာ History တက်လာရန် ၅ စက္ကန့် စောင့်ပါမည် 🚨
+            await asyncio.sleep(5)
             try:
                 hist_res_raw = await scraper.get(order_api_url, params={'type': 'orderlist', 'p': '1', 'pageSize': '5'}, headers=headers)
                 hist_json = hist_res_raw.json()
@@ -252,7 +293,7 @@ async def process_smile_one_order(game_id, zone_id, product_id, currency_name, p
                         if str(order.get('user_id')) == str(game_id) and str(order.get('server_id')) == str(zone_id):
                             current_order_id = str(order.get('increment_id', ""))
                             if current_order_id != last_success_order_id:
-                                if str(order.get('order_status', '')).lower() in ['success', '1'] or str(order.get('status')) == '1':
+                                if str(order.get('order_status', '')).lower() in ['success', '1', 'completed'] or str(order.get('status')) == '1':
                                     real_order_id = current_order_id
                                     actual_product_name = str(order.get('product_name', ''))
                                     is_success = True
@@ -267,7 +308,6 @@ async def process_smile_one_order(game_id, zone_id, product_id, currency_name, p
 
     except Exception as e: 
         return {"status": "error", "message": f"System Error: {str(e)}", "ig_name": known_ig_name}
-
 
 async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_context=None, skip_role_check=False, known_ig_name="Unknown", last_success_order_id=""):
     scraper = await get_main_scraper()
