@@ -21,6 +21,116 @@ from packages import DOUBLE_DIAMOND_PACKAGES, BR_PACKAGES, PH_PACKAGES, MCC_PACK
 from helpers import is_authorized, notify_owner, generate_list
 import easy_bby
 
+# 🌟 Aiogram 3 ၏ Command Filter စနစ်
+@dp.message(Command("allorder", prefix="."))
+async def fetch_all_orders_today(message: types.Message):
+    
+    loading_msg = await message.reply("🔄 ဒီနေ့အတွက် Order စာရင်းများကို ဆွဲထုတ်နေပါသည်...\n*(Cookie မသေစေရန် 8 စက္ကန့်ခြားပြီး ဆွဲနေသဖြင့် အနည်းငယ် စောင့်ပေးပါရှင့် ⏳)*")
+    
+    try:
+        # easy_bby.py ထဲမှ scraper ကို လှမ်းယူပါမည် (import လုပ်ထားရန်လိုသည်)
+        scraper = await get_main_scraper()
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest', 
+            'Referer': 'https://www.smile.one/customer/order'
+        }
+        
+        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        page = 1
+        today_orders = []
+        is_fetching = True
+        
+        while is_fetching:
+            url = 'https://www.smile.one/customer/activationcode/codelist'
+            params = {'type': 'orderlist', 'p': str(page), 'pageSize': '20'}
+            
+            res = await scraper.get(url, params=params, headers=headers)
+            data = res.json()
+            
+            order_list = data.get('list', [])
+            
+            if not order_list:
+                break
+                
+            has_older_orders = False
+            
+            for order in order_list:
+                create_time = str(order.get('create_time', ''))
+                
+                if create_time.startswith(today_date):
+                    today_orders.append(order)
+                else:
+                    has_older_orders = True
+            
+            if has_older_orders:
+                break
+                
+            page += 1
+            
+            # 🚨 8 စက္ကန့် နားပါမည် 🚨
+            await asyncio.sleep(8)
+            
+    except Exception as e:
+        await loading_msg.edit_text(f"❌ စာရင်းဆွဲထုတ်ရာတွင် Error ဖြစ်ပေါ်ခဲ့ပါသည်: {e}")
+        return
+        
+    if not today_orders:
+        await loading_msg.edit_text(f"⚠️ {today_date} အတွက် Order စာရင်း မတွေ့ရှိပါရှင့်။")
+        return
+        
+    # .txt ဖိုင်အတွက် စာသားများ စီစဉ်ခြင်း
+    txt_content = f"===== နေ့စဉ် အော်ဒါစာရင်း ({today_date}) =====\n"
+    txt_content += f"စုစုပေါင်း အော်ဒါအရေအတွက် : {len(today_orders)}\n"
+    txt_content += "=" * 50 + "\n\n"
+    
+    total_spent = 0.0
+    success_count = 0
+    failed_count = 0
+    
+    for idx, o in enumerate(today_orders, 1):
+        o_id = o.get('increment_id', 'N/A')
+        uid = o.get('user_id', 'N/A')
+        sid = o.get('server_id', 'N/A')
+        p_name = o.get('product_name', 'N/A')
+        price = o.get('price', '0')
+        create_time = str(o.get('create_time', ''))
+        
+        is_success = str(o.get('order_status', '')).lower() in ['success', '1'] or str(o.get('status')) == '1'
+        if is_success:
+            status_str = "✅ Success"
+            success_count += 1
+            try: total_spent += float(price)
+            except: pass
+        else:
+            status_str = "❌ Failed/Pending"
+            failed_count += 1
+            
+        txt_content += f"[{idx}] အချိန်: {create_time}\n"
+        txt_content += f"    ID: {uid} ({sid})\n"
+        txt_content += f"    ပစ္စည်း: {p_name} | စျေးနှုန်း: {price}\n"
+        txt_content += f"    Status: {status_str} | OrderID: {o_id}\n"
+        txt_content += "-" * 40 + "\n"
+        
+    txt_content += f"\n✅ အောင်မြင်: {success_count} | ❌ မအောင်မြင်: {failed_count}\n"
+    txt_content += f"💰 စုစုပေါင်း ကုန်ကျငွေ: {total_spent:.2f}\n"
+    txt_content += "=" * 50 + "\n"
+    
+    # 🌟 Aiogram 3 အတွက် သီးသန့် Memory File ဖန်တီးနည်း (BufferedInputFile)
+    file_bytes = txt_content.encode('utf-8')
+    document = BufferedInputFile(file_bytes, filename=f"Daily_Orders_{today_date}.txt")
+    
+    caption = f"✅ **{today_date}** အတွက် Order စာရင်းများ ရပါပြီရှင့်။\n\n"
+    caption += f"📦 စုစုပေါင်း: {len(today_orders)} Orders\n"
+    caption += f"💰 ကုန်ကျငွေ: {total_spent:.2f}"
+    
+    await message.reply_document(document=document, caption=caption)
+    await loading_msg.delete()
+
+
 async def execute_buy_process(message, lines, regex_pattern, currency, packages_dict, process_func, title_prefix, is_mcc=False):
     tg_id = str(message.from_user.id)
     telegram_user = message.from_user.username
