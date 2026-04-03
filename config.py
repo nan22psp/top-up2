@@ -27,5 +27,18 @@ dp = Dispatcher()
 IS_MAINTENANCE = False
 GLOBAL_SCAMMERS = set()
 user_locks = defaultdict(asyncio.Lock)
-api_semaphore = asyncio.Semaphore(10)
+api_semaphore = asyncio.Semaphore(3)
 auth_lock = asyncio.Lock()
+
+WEBSHARE_PROXIES = [
+    "http://qduuujrj:bf1ttoecf2d5@31.59.20.176:6754",
+    "http://qduuujrj:bf1ttoecf2d5@23.95.150.145:6114",
+    "http://qduuujrj:bf1ttoecf2d5@198.23.239.134:6540",
+    "http://qduuujrj:bf1ttoecf2d5@45.38.107.97:6014",
+    "http://qduuujrj:bf1ttoecf2d5@107.172.163.27:6543",
+    "http://qduuujrj:bf1ttoecf2d5@198.105.121.200:6462",
+    "http://qduuujrj:bf1ttoecf2d5@216.10.27.159:6837",
+    "http://qduuujrj:bf1ttoecf2d5@142.111.67.146:5611",
+    "http://qduuujrj:bf1ttoecf2d5@191.96.254.138:6185",
+    "http://qduuujrj:bf1ttoecf2d5@31.58.9.4:6077"
+]
