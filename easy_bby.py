@@ -274,21 +274,20 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
     global GLOBAL_CSRF
     cache_key = f"mcc_{currency_name.lower()}"
 
-
+    # 🛠 ပြင်ဆင်ချက်: Pay URL များကိုပါ Region အတိအကျဖြစ်အောင် ပြင်ဆင်ထားပါသည်
     if currency_name == 'PH':
         main_url = 'https://www.smile.one/ph/merchant/game/magicchessgogo'
         checkrole_url = 'https://www.smile.one/ph/merchant/game/checkrole'
         query_url = 'https://www.smile.one/ph/merchant/game/createorder' 
-        pay_url = 'https://www.smile.one/merchant/game/pay'
+        pay_url = 'https://www.smile.one/ph/merchant/game/pay' # <-- ဤနေရာတွင် /ph/ ထည့်ထားပါသည်
         order_api_url = 'https://www.smile.one/ph/customer/activationcode/codelist'
     else:
         main_url = 'https://www.smile.one/br/merchant/game/magicchessgogo'
         checkrole_url = 'https://www.smile.one/br/merchant/game/checkrole'
         query_url = 'https://www.smile.one/br/merchant/game/createorder' 
-        pay_url = 'https://www.smile.one/merchant/game/pay'
+        pay_url = 'https://www.smile.one/br/merchant/game/pay' # <-- ဤနေရာတွင် /br/ ထည့်ထားပါသည်
         order_api_url = 'https://www.smile.one/br/customer/activationcode/codelist'
     
-
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'application/json, text/javascript, */*; q=0.01',
@@ -319,7 +318,8 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
                 'sid': zone_id,
                 'productid': product_id,
                 'channel_method': 'smilecoin',
-                'external': 'false'
+                'external': 'false',
+                '_csrf': csrf_token
             }
             return await scraper.post(query_url, params={'product': 'magicchessgogo'}, data=query_data, headers=headers)
 
@@ -327,7 +327,9 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
             check_data = {
                 'uid': game_id,
                 'sid': zone_id,
-                'checkrole': '1'
+                'checkrole': '1',
+                'product': 'magicchessgogo',
+                '_csrf': csrf_token
             }
             return await scraper.post(checkrole_url, params={'product': 'magicchessgogo'}, data=check_data, headers=headers)
 
@@ -335,10 +337,8 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
             query_response_raw = await get_flow_id()
         else:
             query_response_raw, role_response_raw = await asyncio.gather(get_flow_id(), check_role())
-            
             try:
                 role_result = role_response_raw.json()
-                
                 fetched_name = role_result.get('nickname') or role_result.get('username') or role_result.get('role_name') or role_result.get('data', {}).get('nickname') or role_result.get('data', {}).get('username')
                 
                 if fetched_name and str(fetched_name).strip() != "":
@@ -385,13 +385,11 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
             'external': 'false'
         }
         
-        # 🛠 အဓိက ပြင်ဆင်ချက်: Pay တွင် AJAX မသုံးဘဲ ရိုးရိုး Browser အတိုင်း Form Submit လုပ်ပါမည်
         pay_headers = headers.copy()
         if 'X-Requested-With' in pay_headers:
-            del pay_headers['X-Requested-With']  # Ajax Header ကို ဖြုတ်ပါမည်
+            del pay_headers['X-Requested-With'] 
         pay_headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
 
-        # allow_redirects=False ဖြင့် ဆာဗာက ဘယ်ကို ပြောင်းလဲသွားလဲဆိုတာ ဖမ်းယူပါမည်
         pay_response_raw = await scraper.post(pay_url, data=pay_data, headers=pay_headers, allow_redirects=False)
         
         status_code = pay_response_raw.status_code
@@ -404,13 +402,11 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
         real_order_id, is_success = "Not found", False
         actual_product_name = ""
 
-        # 🛠 Redirect ဖြင့် အောင်မြင်ကြောင်း စစ်ဆေးခြင်း (Website Page ပြောင်းသွားလျှင် အောင်မြင်သည်)
         if status_code in [301, 302, 303]:
             if "customer/order" in location or "success" in location or "pay" in location:
                 is_success = True
                 real_order_id = f"FAST_{int(time.time())}_{random.randint(100,999)}"
         
-        # 🛠 သို့မဟုတ် JSON / Text ဖြင့် ပြန်လာခဲ့လျှင်
         if not is_success and pay_text:
             try:
                 pay_json = pay_response_raw.json()
@@ -428,7 +424,6 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
                     is_success = True
                     real_order_id = f"FAST_{int(time.time())}_{random.randint(100,999)}"
 
-        # 🛠 History မှ တစ်ဆင့် နောက်ဆုံးစစ်ဆေးခြင်း
         hist_debug = ""
         if not is_success:
             try:
@@ -436,10 +431,7 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
                 hist_json = hist_res_raw.json()
                 if 'list' in hist_json and len(hist_json['list']) > 0:
                     first_order = hist_json['list'][0]
-                    # Debug Info
-                    hist_debug = f" | Hist[0]: UID={first_order.get('user_id')} SID={first_order.get('server_id')}"
                     for order in hist_json['list']:
-                        # MCC history တွင် uid သို့မဟုတ် user_id ကို ရှာဖွေစစ်ဆေးပါမည်
                         uid_val = str(order.get('user_id') or order.get('uid') or "")
                         sid_val = str(order.get('server_id') or order.get('sid') or order.get('zone_id') or "")
                         
@@ -452,18 +444,28 @@ async def process_mcc_order(game_id, zone_id, product_id, currency_name, prev_co
                                     is_success = True
                                     break
             except Exception as e: 
-                hist_debug = f" | Hist Err: {str(e)}"
+                pass
 
         if is_success:
             return {"status": "success", "ig_name": ig_name, "order_id": real_order_id, "csrf_token": csrf_token, "product_name": actual_product_name}
         else:
-            # အသေးစိတ် Debug Info
             if status_code in [301, 302, 303]:
-                error_detail = f"Redirected to: {location}{hist_debug}"
+                # 🛠 Error Page သို့ရောက်ပါက အကြောင်းရင်းကို ရှင်းလင်းစွာ ပြပါမည်
+                error_detail = "Payment Rejected by Server (Invalid Item or Region Mismatch)"
+                if "error" in location:
+                    try:
+                        err_url = location if location.startswith('http') else f"https://www.smile.one{location}"
+                        err_res = await scraper.get(err_url, headers=headers)
+                        err_soup = BeautifulSoup(err_res.text, 'html.parser')
+                        msg_box = err_soup.find(class_=re.compile('msg|error-message', re.I))
+                        if msg_box:
+                            error_detail = f"Declined: {msg_box.text.strip()}"
+                    except:
+                        pass
             elif not pay_text:
-                error_detail = f"Empty Response (HTTP {status_code}){hist_debug}"
+                error_detail = f"Empty Response (HTTP {status_code})"
             else:
-                error_detail = f"Reply: {pay_text[:80]}...{hist_debug}"
+                error_detail = f"Reply: {pay_text[:80]}..."
                 
             return {"status": "error", "message": error_detail, "ig_name": ig_name}
 
